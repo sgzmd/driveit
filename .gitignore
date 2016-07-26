@@ -1,0 +1,4 @@
+src/main/resources/client_id.json
+src/main/resources/readability_token.txt
+.DS_Store
+*.DS_Store
