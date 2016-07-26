@@ -15,6 +15,9 @@ import com.google.api.services.drive.DriveScopes;
 import com.google.api.services.drive.model.*;
 import com.google.api.services.drive.Drive;
 import com.google.api.services.drive.model.File;
+import com.google.common.collect.ImmutableList;
+import de.jetwick.snacktory.HtmlFetcher;
+import de.jetwick.snacktory.JResult;
 import org.apache.commons.io.IOUtils;
 import org.json.simple.JSONObject;
 import org.json.simple.parser.JSONParser;
@@ -58,7 +61,8 @@ public class DriveIt {
    */
   private static HttpTransport HTTP_TRANSPORT;
 
-  private static final String READAB_URL = "https://readability.com/api/content/v1/parser?token=<insert token here>&url=https://hbr.org/2007/09/investigative-negotiation";
+  // https://hbr.org/2007/09/investigative-negotiation
+  private static final String READAB_URL = "https://readability.com/api/content/v1/parser?token=%s&url=%s&max_pages=1000";
 
   /**
    * Global instance of the scopes required by this quickstart.
@@ -120,7 +124,13 @@ public class DriveIt {
         .build();
   }
 
-  public static void main(String[] args) throws IOException, ParseException {
+  static String makeReadabilityUrl(String url) throws IOException {
+    String token = IOUtils.toString(
+        new InputStreamReader(DriveIt.class.getResourceAsStream("/readability_token.txt")));
+    return String.format(READAB_URL, token, url);
+  }
+
+  public static void main(String[] args) throws Exception {
     // Build a new authorized API client service.
     Drive service = getDriveService();
 
@@ -137,21 +147,30 @@ public class DriveIt {
       for (File f : files) {
         if (f.getName().equals(FOLDER_NAME)) {
           System.out.println("Folder is there");
-          String json = IOUtils.toString(new URL(READAB_URL), "UTF-8");
-          JSONParser parser = new JSONParser();
-          JSONObject obj = (JSONObject) parser.parse(json);
-          String content = (String) obj.get("content");
+
+          HtmlFetcher fetcher = new HtmlFetcher();
+          fetcher.setMaxTextLength(Integer.MAX_VALUE);
+          fetcher.setUserAgent("Mozilla/5.0 (Windows NT 6.1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2228.0 Safari/537.36");
+
+          JResult res = fetcher.fetchAndExtract("https://hbr.org/2007/09/investigative-negotiation", 1000000, true);
+
+          String content = res.getText();
           Path tempFile = Files.createTempFile("myfile", ".html");
           content = "<html><body>" + content + "</body></html>";
-          IOUtils.write(content, new OutputStreamWriter(new FileOutputStream(tempFile.toFile())));
 
-          String title = obj.get("title") + ".html";
+          System.out.println(content);
+
+          IOUtils.write(content, new OutputStreamWriter(new FileOutputStream(tempFile.toFile())));
+          String title = res.getTitle();
           FileContent fc = new FileContent("text/html", tempFile.toFile());
           File fileMetadata = new File();
           fileMetadata.setName(title);
-          fileMetadata.setMimeType("text/html");
+          fileMetadata.setParents(ImmutableList.of(f.getId()));
+          fileMetadata.setMimeType("application/vnd.google-apps.document");
 
           service.files().create(fileMetadata, fc).execute();
+
+          System.out.println(res.toString());
 
           return;
         }
